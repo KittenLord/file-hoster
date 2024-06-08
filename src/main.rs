@@ -10,9 +10,14 @@ use std::net::TcpStream;
 use std::str;
 
 const VERSION_HEADER: &str = "v0.0.0";
+const BATCH_SIZE: u64 = 2048;
 
 fn get_config_path() -> PathBuf {
-    let localappdata = var("localappdata").expect("You are not on windows lol");
+    let os = std::env::consts::OS;
+    let mut folder = "localappdata";
+    if os == "linux" { folder = "XDG_CONFIG_HOME"; }
+
+    let localappdata = var(folder).expect("rip");
     let config_folder = Path::new(&localappdata).join("file-hoster");
     config_folder
 }
@@ -94,9 +99,6 @@ fn handle_connection(mut stream: TcpStream) {
                     // stream.write(b" ").unwrap();
                 }
                 else if line.starts_with("download") {
-    
-                    println!("RECEIVED: {line}");
-
                     let lines: Vec<_> = line.split("\n").collect();
                     let path = lines[1];
                     let size: u64 = lines[2].parse().unwrap();
@@ -114,12 +116,9 @@ fn handle_connection(mut stream: TcpStream) {
 
                     file.seek(std::io::SeekFrom::Start(size)).unwrap();
 
-                    println!("RECEIVED SIZE: {size}");
-                    let size: u16 = u16::try_from(2048.min(metadata.file_size() - size)).unwrap();
-                    println!("SENDING SIZE: {size}");
+                    let size: u16 = u16::try_from(BATCH_SIZE.min(metadata.file_size() - size)).unwrap();
 
                     let bytes = &size.to_be_bytes()[..2];
-                    println!("SERVER {:?}", bytes);
                     stream.write(bytes).unwrap();
 
                     let mut buf: Vec<u8> = vec![0; size as usize];
@@ -209,6 +208,14 @@ fn main() {
             assert!(command.len() == 3);
             let file_id: usize = command[1].parse().unwrap();
             let path = command[2].to_owned();
+            let path = Path::new(&path);
+
+            if(!path.exists()) {
+                File::create(&path).unwrap();
+            }
+            else {
+                fs::write(&path, "").unwrap();
+            }
 
             stream.as_ref().unwrap().write("list".as_bytes()).unwrap();
             let mut buf = [0; 1024];
@@ -218,7 +225,7 @@ fn main() {
             let foreign_path = buf.split("\n").collect::<Vec<_>>()[file_id].to_owned() + "\n";
 
             loop {
-                let metadata = Path::new(&path).metadata().unwrap();
+                let metadata = path.metadata().unwrap();
                 let mut file = OpenOptions::new()
                     .append(true)
                     .open(&path)
@@ -237,17 +244,9 @@ fn main() {
                     break;
                 }
 
-                println!("CLIENT: {:?}", buf);
-
-                println!("AMOUNT: {amount}");
-
-                println!("SIZE: {}", Path::new(&path).metadata().unwrap().file_size());
-
                 let mut buf = vec![0; amount as usize];
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 file.write(&buf).unwrap();
-
-                println!("NEXTSIZE: {}", Path::new(&path).metadata().unwrap().file_size());
             }
         }
     }
