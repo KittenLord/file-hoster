@@ -1,13 +1,9 @@
 use std::env::var;
-// use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::io::{stdin, stdout, BufRead, BufReader, ErrorKind, Read, Seek, Write};
-use std::ptr::write_bytes;
-use std::{fs, thread};
-use std::fs::{metadata, File, OpenOptions};
-use std::net::{Shutdown, TcpListener};
-use std::net::TcpStream;
-use std::str;
+use std::io::{stdin, stdout, ErrorKind, Read, Seek, Write};
+use std::{fs, thread, str};
+use std::fs::{File, OpenOptions};
+use std::net::{Shutdown, TcpListener, TcpStream};
 
 const VERSION_HEADER: &str = "v0.0.0";
 const BATCH_SIZE: u64 = u64::MAX;
@@ -17,7 +13,7 @@ fn get_config_path() -> PathBuf {
 
     if os == "windows" {
         let mut folder = "localappdata";
-        let localappdata = var(folder).expect("rip");
+        let localappdata = var(folder).expect("Couldn't access %LOCALAPPDATA%, hosting functionality is turned off.");
         let config_folder = Path::new(&localappdata).join("file-hoster");
         config_folder
     }
@@ -233,51 +229,43 @@ fn main() {
 
             println!("Started downloading...");
 
-            loop {
-                let metadata = path.metadata().unwrap();
+            let metadata = path.metadata().unwrap();
 
-                let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.len().to_string().to_owned() + "\n";
-                stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
+            let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.len().to_string().to_owned() + "\n";
+            stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
 
-                let mut buf = [0; 8];
+            let mut buf = [0; 8];
 
-                stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
-                let amount = u64::from_be_bytes(buf);
+            stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
+            let amount = u64::from_be_bytes(buf);
 
-                if amount == 0 {
-                    println!("\nFile downloaded!");
-                    break;
-                }
-
-                const dec: u64 = 65536;
-                let mut limiter = amount;
-                while limiter > dec {
-                    limiter -= dec;
-                    let mut buf = [0; dec as usize];
-                    stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
-                    file.write(&buf).unwrap();
-
-                    let fraction = (amount - limiter) as f64 / amount as f64;
-                    let max_bars = 20;
-                    let filled_bars = (max_bars as f64 * fraction) as u64;
-
-                    let mut bar = String::from("\r[");
-                    for _ in 0..filled_bars {
-                        bar += "█";
-                    }
-                    for _ in 0..max_bars-filled_bars {
-                        bar += "-";
-                    }
-                    bar += "]";
-                    print!("{bar}");
-                }
-
-                let mut buf = vec![0; limiter as usize];
+            const dec: u64 = 65536;
+            let mut limiter = amount;
+            while limiter > dec {
+                limiter -= dec;
+                let mut buf = [0; dec as usize];
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 file.write(&buf).unwrap();
 
-                print!("\r[{}]", "█".repeat(20));
+                let fraction = (amount - limiter) as f64 / amount as f64;
+                let max_bars = 20;
+                let filled_bars = (max_bars as f64 * fraction) as u64;
+
+                let mut bar = String::from("\r[");
+                bar += &"█".repeat(filled_bars as usize);
+                bar += &"-".repeat(max_bars - filled_bars as usize);
+                bar += "]";
+                print!("{bar}");
             }
+
+            let mut buf = vec![0; limiter as usize];
+            stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
+            file.write(&buf).unwrap();
+
+            print!("\r[{}]", "█".repeat(20));
+
+            println!("\nFile downloaded!");
+            break;
         }
     }
 }
