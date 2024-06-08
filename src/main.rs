@@ -6,7 +6,7 @@ use std::fs::{File, OpenOptions};
 use std::net::{Shutdown, TcpListener, TcpStream};
 
 const VERSION_HEADER: &str = "v0.0.0";
-const BATCH_SIZE: u64 = 65536;
+const BATCH_SIZE: u64 = 100000000;
 
 fn get_config_path() -> Option<PathBuf> {
     let os = std::env::consts::OS;
@@ -251,7 +251,7 @@ fn main() {
                 let mut limiter = amount;
                 while limiter > BATCH_SIZE {
                     limiter -= BATCH_SIZE;
-                    let mut buf = [0; BATCH_SIZE as usize];
+                    let mut buf = vec![0; BATCH_SIZE as usize];
                     stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                     file.write(&buf).unwrap();
 
