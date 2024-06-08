@@ -261,15 +261,15 @@ fn main() {
                     let max_bars = 20;
                     let filled_bars = (max_bars as f64 * fraction) as u64;
 
-                    print!("\r");
-                    print!("[");
+                    let mut bar = String::from("\r[");
                     for _ in 0..filled_bars {
-                        print!("█");
+                        bar += "█";
                     }
                     for _ in 0..max_bars-filled_bars {
-                        print!("-");
+                        bar += "-";
                     }
-                    print!("]");
+                    bar += "]";
+                    print!("{bar}");
                 }
 
                 let mut buf = vec![0; limiter as usize];
