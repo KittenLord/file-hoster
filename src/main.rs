@@ -1,5 +1,5 @@
 use std::env::var;
-use std::os::windows::fs::MetadataExt;
+// use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::io::{stdin, stdout, BufRead, BufReader, ErrorKind, Read, Seek, Write};
 use std::ptr::write_bytes;
@@ -104,7 +104,7 @@ fn handle_connection(mut stream: TcpStream) {
                     let size: u64 = lines[2].parse().unwrap();
 
                     let metadata = Path::new(path).metadata().unwrap();
-                    if metadata.file_size() <= size {
+                    if metadata.len() <= size {
                         stream.write(&[0; 2]).unwrap();
                         continue;
                     }
@@ -116,7 +116,7 @@ fn handle_connection(mut stream: TcpStream) {
 
                     file.seek(std::io::SeekFrom::Start(size)).unwrap();
 
-                    let size: u16 = u16::try_from(BATCH_SIZE.min(metadata.file_size() - size)).unwrap();
+                    let size: u16 = u16::try_from(BATCH_SIZE.min(metadata.len() - size)).unwrap();
 
                     let bytes = &size.to_be_bytes()[..2];
                     stream.write(bytes).unwrap();
@@ -231,7 +231,7 @@ fn main() {
                     .open(&path)
                     .unwrap();
 
-                let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.file_size().to_string().to_owned() + "\n";
+                let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.len().to_string().to_owned() + "\n";
                 stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
 
                 let mut buf = [0; 2];
