@@ -182,7 +182,10 @@ fn main() {
         stdin().read_line(&mut command).unwrap();
         let command = command.trim();
 
-        match command.split_whitespace().collect::<Vec<_>>()[0] {
+        let spl: Vec<_> = command.split_whitespace().collect();
+        if spl.len() == 0 { continue; }
+
+        match spl[0] {
             "q" | "exit" => { break; }
             "ls" | "list" => { list_shared_files(); }
             "share" => {
