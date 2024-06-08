@@ -10,7 +10,7 @@ use std::net::TcpStream;
 use std::str;
 
 const VERSION_HEADER: &str = "v0.0.0";
-const BATCH_SIZE: u64 = 1000000000;
+const BATCH_SIZE: u64 = u64::MAX;
 
 fn get_config_path() -> PathBuf {
     let os = std::env::consts::OS;
@@ -226,13 +226,15 @@ fn main() {
             let buf = bytes_to_string(&buf);
 
             let foreign_path = buf.split("\n").collect::<Vec<_>>()[file_id].to_owned() + "\n";
+            let mut file = OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap();
+
+            println!("Started downloading...");
 
             loop {
                 let metadata = path.metadata().unwrap();
-                let mut file = OpenOptions::new()
-                    .append(true)
-                    .open(&path)
-                    .unwrap();
 
                 let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.len().to_string().to_owned() + "\n";
                 stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
@@ -243,13 +245,38 @@ fn main() {
                 let amount = u64::from_be_bytes(buf);
 
                 if amount == 0 {
-                    println!("File downloaded!");
+                    println!("\nFile downloaded!");
                     break;
                 }
 
-                let mut buf = vec![0; amount as usize];
+                const dec: u64 = 65536;
+                let mut limiter = amount;
+                while limiter > dec {
+                    limiter -= dec;
+                    let mut buf = [0; dec as usize];
+                    stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
+                    file.write(&buf).unwrap();
+
+                    let fraction = (amount - limiter) as f64 / amount as f64;
+                    let max_bars = 20;
+                    let filled_bars = (max_bars as f64 * fraction) as u64;
+
+                    print!("\r");
+                    print!("[");
+                    for _ in 0..filled_bars {
+                        print!("█");
+                    }
+                    for _ in 0..max_bars-filled_bars {
+                        print!("-");
+                    }
+                    print!("]");
+                }
+
+                let mut buf = vec![0; limiter as usize];
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 file.write(&buf).unwrap();
+
+                print!("\r[{}]", "█".repeat(20));
             }
         }
     }
