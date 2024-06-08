@@ -175,7 +175,7 @@ fn main() {
         stdin().read_line(&mut command).unwrap();
         let command = command.trim();
 
-        match command {
+        match command.split_whitespace().collect::<Vec<_>>()[0] {
             "q" | "exit" => { break; }
             "ls" | "list" => { list_shared_files(); }
             "share" => {
