@@ -6,7 +6,6 @@ use std::fs::{File, OpenOptions};
 use std::net::{Shutdown, TcpListener, TcpStream};
 
 const VERSION_HEADER: &str = "v0.0.0";
-const BATCH_SIZE: u64 = u64::MAX;
 
 fn get_config_path() -> Option<PathBuf> {
     let os = std::env::consts::OS;
@@ -133,7 +132,7 @@ fn handle_connection(mut stream: TcpStream) {
 
                     file.seek(std::io::SeekFrom::Start(size)).unwrap();
 
-                    let size = BATCH_SIZE.min(metadata.len() - size);
+                    let size = metadata.len() - size;
                     let bytes = &size.to_be_bytes()[..8];
                     stream.write(bytes).unwrap();
 
