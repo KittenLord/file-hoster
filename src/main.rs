@@ -215,12 +215,8 @@ fn main() {
                 let path = command[2].to_owned();
                 let path = Path::new(&path);
 
-                if(!path.exists()) {
-                    File::create(&path).unwrap();
-                }
-                else {
-                    fs::write(&path, "").unwrap();
-                }
+                if !path.exists() { File::create(&path).unwrap(); }
+                else { fs::write(&path, "").unwrap(); }
 
                 stream.as_ref().unwrap().write("list".as_bytes()).unwrap();
                 let mut buf = [0; 1024];
