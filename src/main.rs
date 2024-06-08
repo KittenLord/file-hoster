@@ -14,12 +14,16 @@ const BATCH_SIZE: u64 = 2048;
 
 fn get_config_path() -> PathBuf {
     let os = std::env::consts::OS;
-    let mut folder = "localappdata";
-    if os == "linux" { folder = "XDG_CONFIG_HOME"; }
 
-    let localappdata = var(folder).expect("rip");
-    let config_folder = Path::new(&localappdata).join("file-hoster");
-    config_folder
+    if os == "windows" {
+        let mut folder = "localappdata";
+        let localappdata = var(folder).expect("rip");
+        let config_folder = Path::new(&localappdata).join("file-hoster");
+        config_folder
+    }
+    else {
+        Path::new("$HOME/.config/file-hoster").to_path_buf()
+    }
 }
 
 fn get_shared_files_path() -> PathBuf {
