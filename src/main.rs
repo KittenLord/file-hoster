@@ -1,6 +1,6 @@
 use std::env::var;
 use std::path::{Path, PathBuf};
-use std::io::{stdin, stdout, ErrorKind, Read, Seek, Write};
+use std::io::{stdin, ErrorKind, Read, Seek, Write};
 use std::{fs, thread, str};
 use std::fs::{File, OpenOptions};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -8,39 +8,50 @@ use std::net::{Shutdown, TcpListener, TcpStream};
 const VERSION_HEADER: &str = "v0.0.0";
 const BATCH_SIZE: u64 = u64::MAX;
 
-fn get_config_path() -> PathBuf {
+fn get_config_path() -> Option<PathBuf> {
     let os = std::env::consts::OS;
 
     if os == "windows" {
-        let mut folder = "localappdata";
-        let localappdata = var(folder).expect("Couldn't access %LOCALAPPDATA%, hosting functionality is turned off.");
+        let folder = "localappdata";
+        let localappdata = var(folder).ok()?;
         let config_folder = Path::new(&localappdata).join("file-hoster");
-        config_folder
+        Some(config_folder)
     }
     else {
-        Path::new("$HOME/.config/file-hoster").to_path_buf()
+        Some(Path::new("$HOME/.config/file-hoster").to_path_buf())
     }
 }
 
-fn get_shared_files_path() -> PathBuf {
-    let config_shared_path = get_config_path().join("shared.txt");
-    config_shared_path
+fn get_shared_files_path() -> Option<PathBuf> {
+    let config_path = get_config_path()?;
+    Some(config_path.join("shared.txt"))
 }
 
-fn get_port_path() -> PathBuf {
-    let config_port_path = get_config_path().join("port.txt");
-    config_port_path
+fn get_port_path() -> Option<PathBuf> {
+    let config_path = get_config_path()?;
+    Some(config_path.join("port.txt"))
 }
 
 fn load_shared_files() -> Vec<String> {
-    let shared_files = fs::read_to_string(get_shared_files_path()).unwrap_or(String::new());
-    let shared_files: Vec<String> = shared_files.split("\n")
+    let path = get_shared_files_path();
+    if path.is_none() { 
+        eprint!("Couldn't load config files.");
+        return Vec::new(); 
+    }
+    let content = fs::read_to_string(path.unwrap());
+    if content.is_err() { 
+        eprint!("Couldn't load config files.");
+        return Vec::new(); 
+    }
+    let content = content.unwrap();
+
+    let shared_files: Vec<String> = content.split("\n")
         .map(|s| s.trim().to_owned())
         .filter(|s| s.len() > 0)
         .filter(|s| {
             Path::new(s).is_file()
         })
-        .collect();
+    .collect();
     shared_files
 }
 
@@ -57,22 +68,28 @@ fn list_shared_files() {
     }
 }
 
+fn update_shared_files(files: Vec<String>) {
+    let files = files.join("\n");
+
+    let folder_path = get_config_path();
+    if folder_path.is_none() { eprintln!("Couldn't update files.txt"); return; }
+    fs::create_dir_all(folder_path.unwrap()).expect("awooga");
+
+    let files_path = get_shared_files_path();
+    if files_path.is_none() { eprintln!("Couldn't update files.txt"); return; }
+    fs::write(files_path.unwrap(), files).expect("oopsie daizy");
+}
+
 fn share_file(path: &str) {
     let mut files = load_shared_files();
     files.push(path.to_owned());
-    let files = files.join("\n");
-
-    fs::create_dir_all(get_config_path()).expect("awooga");
-    fs::write(get_shared_files_path(), files).expect("oopsie daizy");
+    update_shared_files(files);
 }
 
 fn unshare_file(index: usize) {
     let mut files = load_shared_files();
     files.remove(index);
-    let files = files.join("\n");
-
-    fs::create_dir_all(get_config_path()).expect("awooga");
-    fs::write(get_shared_files_path(), files).expect("oopsie daizy");
+    update_shared_files(files);
 }
 
 fn bytes_to_string(buf: &[u8]) -> String {
@@ -136,15 +153,16 @@ fn handle_connection(mut stream: TcpStream) {
 }
 
 fn server_loop() {
-    let path = get_port_path();
+    let path = get_port_path().unwrap();
     let port = fs::read_to_string(path).unwrap_or(String::from("1357"));
 
-    let listener = TcpListener::bind("0.0.0.0:".to_owned() + &port).unwrap();
-    println!("Listening");
+    let listener = TcpListener::bind("0.0.0.0:".to_owned() + &port).expect("Failed to start up server, aborting thread");
+
+    println!("Server is running on port {port}");
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-        println!("Connection established!");
+        println!("A client has connected");
         thread::spawn(|| handle_connection(stream));
     }
 }
@@ -154,118 +172,111 @@ fn main() {
     let mut stream: Option<TcpStream> = None;
 
     loop {
-        print!("> ");
-        stdout().flush().unwrap();
-
         let mut command = String::new();
         stdin().read_line(&mut command).unwrap();
         let command = command.trim();
 
-        if command == "q" || command == "exit" {
-            break;
-        }
-
-        if command == "ls" {
-            list_shared_files();
-        }
-
-        if command.starts_with("share") {
-            let command: Vec<_> = command.split_whitespace().collect();
-            assert!(command.len() == 2);
-            let path = command[1];
-            share_file(path);
-        }
-
-        if command.starts_with("unshare") {
-            let command: Vec<_> = command.split_whitespace().collect();
-            assert!(command.len() == 2);
-            let index = command[1];
-            let index = index.parse().expect("lol");
-            unshare_file(index);
-        }
-
-        if command.starts_with("connect") {
-            let command: Vec<_> = command.split_whitespace().collect();
-            assert!(command.len() == 2);
-            let ip = command[1];
-
-            if stream.is_some() { stream.as_ref().unwrap().shutdown(Shutdown::Both).unwrap(); }
-            stream = Some(TcpStream::connect(ip.to_owned()).unwrap());
-            stream.as_ref().unwrap().write(VERSION_HEADER.as_bytes()).unwrap();
-        }
-
-        if command.starts_with("fls") {
-            assert!(stream.is_some());
-            stream.as_ref().unwrap().write("list".as_bytes()).unwrap();
-            let mut buf = [0; 1024];
-            stream.as_ref().unwrap().read(&mut buf).unwrap();
-            println!("{}", bytes_to_string(&buf));
-        }
-
-        if command.starts_with("download") {
-            let command: Vec<_> = command.split_whitespace().collect();
-            assert!(command.len() == 3);
-            let file_id: usize = command[1].parse().unwrap();
-            let path = command[2].to_owned();
-            let path = Path::new(&path);
-
-            if(!path.exists()) {
-                File::create(&path).unwrap();
+        match command {
+            "q" | "exit" => { break; }
+            "ls" | "list" => { list_shared_files(); }
+            "share" => {
+                let command: Vec<_> = command.split_whitespace().collect();
+                assert!(command.len() == 2);
+                let path = command[1];
+                share_file(path);
             }
-            else {
-                fs::write(&path, "").unwrap();
+            "unshare" => {
+                let command: Vec<_> = command.split_whitespace().collect();
+                assert!(command.len() == 2);
+                let index = command[1];
+                let index = index.parse().expect("lol");
+                unshare_file(index);
             }
+            "connect" => {
+                let command: Vec<_> = command.split_whitespace().collect();
+                assert!(command.len() == 2);
+                let ip = command[1];
 
-            stream.as_ref().unwrap().write("list".as_bytes()).unwrap();
-            let mut buf = [0; 1024];
-            stream.as_ref().unwrap().read(&mut buf).unwrap();
-            let buf = bytes_to_string(&buf);
+                if stream.is_some() { stream.as_ref().unwrap().shutdown(Shutdown::Both).unwrap(); }
+                stream = Some(TcpStream::connect(ip.to_owned()).unwrap());
+                stream.as_ref().unwrap().write(VERSION_HEADER.as_bytes()).unwrap();
+            }
+            "fls" => {
+                assert!(stream.is_some());
+                stream.as_ref().unwrap().write("list".as_bytes()).unwrap();
+                let mut buf = [0; 1024];
+                stream.as_ref().unwrap().read(&mut buf).unwrap();
+                println!("{}", bytes_to_string(&buf));
+            }
+            "download" => {
 
-            let foreign_path = buf.split("\n").collect::<Vec<_>>()[file_id].to_owned() + "\n";
-            let mut file = OpenOptions::new()
-                .append(true)
-                .open(&path)
-                .unwrap();
+                let command: Vec<_> = command.split_whitespace().collect();
+                assert!(command.len() == 3);
+                let file_id: usize = command[1].parse().unwrap();
+                let path = command[2].to_owned();
+                let path = Path::new(&path);
 
-            println!("Started downloading...");
+                if(!path.exists()) {
+                    File::create(&path).unwrap();
+                }
+                else {
+                    fs::write(&path, "").unwrap();
+                }
 
-            let metadata = path.metadata().unwrap();
+                stream.as_ref().unwrap().write("list".as_bytes()).unwrap();
+                let mut buf = [0; 1024];
+                stream.as_ref().unwrap().read(&mut buf).unwrap();
+                let buf = bytes_to_string(&buf);
 
-            let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.len().to_string().to_owned() + "\n";
-            stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
+                let foreign_path = buf.split("\n").collect::<Vec<_>>()[file_id].to_owned() + "\n";
+                let mut file = OpenOptions::new()
+                    .append(true)
+                    .open(&path)
+                    .unwrap();
 
-            let mut buf = [0; 8];
+                println!("Started downloading...");
 
-            stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
-            let amount = u64::from_be_bytes(buf);
+                let metadata = path.metadata().unwrap();
 
-            const dec: u64 = 65536;
-            let mut limiter = amount;
-            while limiter > dec {
-                limiter -= dec;
-                let mut buf = [0; dec as usize];
+                let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.len().to_string().to_owned() + "\n";
+                stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
+
+                let mut buf = [0; 8];
+
+                stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
+                let amount = u64::from_be_bytes(buf);
+
+                const dec: u64 = 65536;
+                let mut limiter = amount;
+                while limiter > dec {
+                    limiter -= dec;
+                    let mut buf = [0; dec as usize];
+                    stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
+                    file.write(&buf).unwrap();
+
+                    let fraction = (amount - limiter) as f64 / amount as f64;
+                    let max_bars = 20;
+                    let filled_bars = (max_bars as f64 * fraction) as u64;
+
+                    let mut bar = String::from("\r[");
+                    bar += &"█".repeat(filled_bars as usize);
+                    bar += &"-".repeat(max_bars - filled_bars as usize);
+                    bar += "]";
+                    print!("{bar}");
+                }
+
+                let mut buf = vec![0; limiter as usize];
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 file.write(&buf).unwrap();
 
-                let fraction = (amount - limiter) as f64 / amount as f64;
-                let max_bars = 20;
-                let filled_bars = (max_bars as f64 * fraction) as u64;
+                print!("\r[{}]", "█".repeat(20));
 
-                let mut bar = String::from("\r[");
-                bar += &"█".repeat(filled_bars as usize);
-                bar += &"-".repeat(max_bars - filled_bars as usize);
-                bar += "]";
-                print!("{bar}");
+                println!("\nFile downloaded!");
             }
-
-            let mut buf = vec![0; limiter as usize];
-            stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
-            file.write(&buf).unwrap();
-
-            print!("\r[{}]", "█".repeat(20));
-
-            println!("\nFile downloaded!");
-            break;
+            "" => {}
+            _ => {
+                println!("Unknown command");
+            }
         }
     }
 }
