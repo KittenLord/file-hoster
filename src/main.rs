@@ -251,8 +251,11 @@ fn main() {
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 let amount = u64::from_be_bytes(buf);
 
+                let frames = [ "-", "\\", "|", "/" ];
+                let mut frame = 0;
                 let mut limiter = amount;
                 while limiter > BATCH_SIZE {
+                    frame = (frame + 1) % frames.len();
                     limiter -= BATCH_SIZE;
                     let mut buf = vec![0; BATCH_SIZE as usize];
                     stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
@@ -262,11 +265,12 @@ fn main() {
                     let max_bars = 20;
                     let filled_bars = (max_bars as f64 * fraction) as u64;
 
-                    let mut bar = String::from("\r[");
+                    let mut bar = String::from("[");
                     bar += &"█".repeat(filled_bars as usize);
                     bar += &"-".repeat(max_bars - filled_bars as usize);
                     bar += "]";
-                    print!("{bar}");
+
+                    print!("\r|  {}  |  {}  |  {:.2}% / 100.00%  |  {} / {}  |", frames[frame], bar, fraction*100.0, amount-limiter, amount);
                 }
 
                 let mut buf = vec![0; limiter as usize];
