@@ -6,6 +6,7 @@ use std::fs::{File, OpenOptions};
 use std::net::{Shutdown, TcpListener, TcpStream};
 
 const VERSION_HEADER: &str = "v0.0.0";
+const BATCH_SIZE: u64 = 65536;
 
 fn get_config_path() -> Option<PathBuf> {
     let os = std::env::consts::OS;
@@ -131,12 +132,18 @@ fn handle_connection(mut stream: TcpStream) {
                         .unwrap();
 
                     file.seek(std::io::SeekFrom::Start(size)).unwrap();
-
                     let size = metadata.len() - size;
                     let bytes = &size.to_be_bytes()[..8];
                     stream.write(bytes).unwrap();
 
-                    let mut buf: Vec<u8> = vec![0; size as usize];
+                    let mut remaining = size;
+                    while remaining > BATCH_SIZE {
+                        remaining -= BATCH_SIZE;
+                        let mut buf: Vec<u8> = vec![0; BATCH_SIZE as usize];
+                        file.read_exact(&mut buf).unwrap();
+                        stream.write(&buf).unwrap();
+                    }
+                    let mut buf: Vec<u8> = vec![0; remaining as usize];
                     file.read_exact(&mut buf).unwrap();
                     stream.write(&buf).unwrap();
                 }
@@ -241,11 +248,10 @@ fn main() {
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 let amount = u64::from_be_bytes(buf);
 
-                const dec: u64 = 65536;
                 let mut limiter = amount;
-                while limiter > dec {
-                    limiter -= dec;
-                    let mut buf = [0; dec as usize];
+                while limiter > BATCH_SIZE {
+                    limiter -= BATCH_SIZE;
+                    let mut buf = [0; BATCH_SIZE as usize];
                     stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                     file.write(&buf).unwrap();
 
