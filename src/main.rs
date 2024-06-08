@@ -1,7 +1,10 @@
 use std::env::var;
+use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::io::{stdin, stdout, BufRead, BufReader, ErrorKind, Read, Write};
+use std::io::{stdin, stdout, BufRead, BufReader, ErrorKind, Read, Seek, Write};
+use std::ptr::write_bytes;
 use std::{fs, thread};
+use std::fs::{metadata, File, OpenOptions};
 use std::net::{Shutdown, TcpListener};
 use std::net::TcpStream;
 use std::str;
@@ -15,10 +18,13 @@ fn get_config_path() -> PathBuf {
 }
 
 fn get_shared_files_path() -> PathBuf {
-    let localappdata = var("localappdata").expect("You are not on windows lol");
-    let config_folder = Path::new(&localappdata).join("file-hoster");
-    let config_shared_path = config_folder.join("shared.txt");
+    let config_shared_path = get_config_path().join("shared.txt");
     config_shared_path
+}
+
+fn get_port_path() -> PathBuf {
+    let config_port_path = get_config_path().join("port.txt");
+    config_port_path
 }
 
 fn load_shared_files() -> Vec<String> {
@@ -26,6 +32,9 @@ fn load_shared_files() -> Vec<String> {
     let shared_files: Vec<String> = shared_files.split("\n")
         .map(|s| s.trim().to_owned())
         .filter(|s| s.len() > 0)
+        .filter(|s| {
+            Path::new(s).is_file()
+        })
         .collect();
     shared_files
 }
@@ -82,7 +91,40 @@ fn handle_connection(mut stream: TcpStream) {
                     let files = load_shared_files();
                     let files = files.join("\n");
                     stream.write(files.as_bytes()).unwrap();
-                    stream.write(b" ").unwrap();
+                    // stream.write(b" ").unwrap();
+                }
+                else if line.starts_with("download") {
+    
+                    println!("RECEIVED: {line}");
+
+                    let lines: Vec<_> = line.split("\n").collect();
+                    let path = lines[1];
+                    let size: u64 = lines[2].parse().unwrap();
+
+                    let metadata = Path::new(path).metadata().unwrap();
+                    if metadata.file_size() <= size {
+                        stream.write(&[0; 2]).unwrap();
+                        continue;
+                    }
+
+                    let mut file = OpenOptions::new()
+                        .read(true)
+                        .open(&path.trim())
+                        .unwrap();
+
+                    file.seek(std::io::SeekFrom::Start(size)).unwrap();
+
+                    println!("RECEIVED SIZE: {size}");
+                    let size: u16 = u16::try_from(2048.min(metadata.file_size() - size)).unwrap();
+                    println!("SENDING SIZE: {size}");
+
+                    let bytes = &size.to_be_bytes()[..2];
+                    println!("SERVER {:?}", bytes);
+                    stream.write(bytes).unwrap();
+
+                    let mut buf: Vec<u8> = vec![0; size as usize];
+                    file.read_exact(&mut buf).unwrap();
+                    stream.write(&buf).unwrap();
                 }
             }
             Err(e) if e.kind() == ErrorKind::ConnectionAborted => {
@@ -96,7 +138,10 @@ fn handle_connection(mut stream: TcpStream) {
 }
 
 fn server_loop() {
-    let listener = TcpListener::bind("127.0.0.1:1357").unwrap();
+    let path = get_port_path();
+    let port = fs::read_to_string(path).unwrap_or(String::from("1357"));
+
+    let listener = TcpListener::bind("0.0.0.0:".to_owned() + &port).unwrap();
     println!("Listening");
 
     for stream in listener.incoming() {
@@ -146,9 +191,8 @@ fn main() {
             assert!(command.len() == 2);
             let ip = command[1];
 
-
             if stream.is_some() { stream.as_ref().unwrap().shutdown(Shutdown::Both).unwrap(); }
-            stream = Some(TcpStream::connect(ip.to_owned() + ":1357").unwrap());
+            stream = Some(TcpStream::connect(ip.to_owned()).unwrap());
             stream.as_ref().unwrap().write(VERSION_HEADER.as_bytes()).unwrap();
         }
 
@@ -158,6 +202,53 @@ fn main() {
             let mut buf = [0; 1024];
             stream.as_ref().unwrap().read(&mut buf).unwrap();
             println!("{}", bytes_to_string(&buf));
+        }
+
+        if command.starts_with("download") {
+            let command: Vec<_> = command.split_whitespace().collect();
+            assert!(command.len() == 3);
+            let file_id: usize = command[1].parse().unwrap();
+            let path = command[2].to_owned();
+
+            stream.as_ref().unwrap().write("list".as_bytes()).unwrap();
+            let mut buf = [0; 1024];
+            stream.as_ref().unwrap().read(&mut buf).unwrap();
+            let buf = bytes_to_string(&buf);
+
+            let foreign_path = buf.split("\n").collect::<Vec<_>>()[file_id].to_owned() + "\n";
+
+            loop {
+                let metadata = Path::new(&path).metadata().unwrap();
+                let mut file = OpenOptions::new()
+                    .append(true)
+                    .open(&path)
+                    .unwrap();
+
+                let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.file_size().to_string().to_owned() + "\n";
+                stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
+
+                let mut buf = [0; 2];
+
+                stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
+                let amount = u16::from_be_bytes(buf);
+
+                if amount == 0 {
+                    println!("File downloaded!");
+                    break;
+                }
+
+                println!("CLIENT: {:?}", buf);
+
+                println!("AMOUNT: {amount}");
+
+                println!("SIZE: {}", Path::new(&path).metadata().unwrap().file_size());
+
+                let mut buf = vec![0; amount as usize];
+                stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
+                file.write(&buf).unwrap();
+
+                println!("NEXTSIZE: {}", Path::new(&path).metadata().unwrap().file_size());
+            }
         }
     }
 }
