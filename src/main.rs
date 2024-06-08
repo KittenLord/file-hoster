@@ -10,7 +10,7 @@ use std::net::TcpStream;
 use std::str;
 
 const VERSION_HEADER: &str = "v0.0.0";
-const BATCH_SIZE: u64 = 2048;
+const BATCH_SIZE: u64 = 1000000000;
 
 fn get_config_path() -> PathBuf {
     let os = std::env::consts::OS;
@@ -109,7 +109,7 @@ fn handle_connection(mut stream: TcpStream) {
 
                     let metadata = Path::new(path).metadata().unwrap();
                     if metadata.len() <= size {
-                        stream.write(&[0; 2]).unwrap();
+                        stream.write(&[0; 8]).unwrap();
                         continue;
                     }
 
@@ -120,9 +120,8 @@ fn handle_connection(mut stream: TcpStream) {
 
                     file.seek(std::io::SeekFrom::Start(size)).unwrap();
 
-                    let size: u16 = u16::try_from(BATCH_SIZE.min(metadata.len() - size)).unwrap();
-
-                    let bytes = &size.to_be_bytes()[..2];
+                    let size = BATCH_SIZE.min(metadata.len() - size);
+                    let bytes = &size.to_be_bytes()[..8];
                     stream.write(bytes).unwrap();
 
                     let mut buf: Vec<u8> = vec![0; size as usize];
@@ -238,10 +237,10 @@ fn main() {
                 let buf = "download\n".to_owned() + &foreign_path.clone() + &metadata.len().to_string().to_owned() + "\n";
                 stream.as_ref().unwrap().write(buf.as_bytes()).unwrap();
 
-                let mut buf = [0; 2];
+                let mut buf = [0; 8];
 
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
-                let amount = u16::from_be_bytes(buf);
+                let amount = u64::from_be_bytes(buf);
 
                 if amount == 0 {
                     println!("File downloaded!");
