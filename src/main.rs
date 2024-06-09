@@ -1,6 +1,7 @@
 use std::env::var;
 use std::path::{Path, PathBuf};
 use std::io::{stdin, ErrorKind, Read, Seek, Write};
+use std::time::Instant;
 use std::{fs, thread, str};
 use std::fs::{File, OpenOptions};
 use std::net::{Shutdown, TcpListener, TcpStream};
@@ -254,6 +255,8 @@ fn main() {
                 let frames = [ "-", "\\", "|", "/" ];
                 let mut frame = 0;
                 let mut limiter = amount;
+
+                let start = Instant::now();
                 while limiter > BATCH_SIZE {
                     frame = (frame + 1) % frames.len();
                     limiter -= BATCH_SIZE;
@@ -270,7 +273,11 @@ fn main() {
                     bar += &"-".repeat(max_bars - filled_bars as usize);
                     bar += "]";
 
-                    print!("\r|  {}  |  {}  |  {:.2}% / 100.00%  |  {} / {}  |", frames[frame], bar, fraction*100.0, amount-limiter, amount);
+                    let elapsed = Instant::now()-start;
+                    let elapsed = elapsed.as_secs();
+                    let mut remaining = "---".to_owned();
+                    if fraction > 0.0 { remaining = (((elapsed as f64 / fraction) - elapsed as f64) as u64).to_string(); }
+                    print!("\r|  {}  |  {}  |  {:.2}% / 100.00%  |  {} / {}  |  {}s elapsed  |  {}s remaining  |", frames[frame], bar, fraction*100.0, amount-limiter, amount, elapsed, remaining);
                 }
 
                 let mut buf = vec![0; limiter as usize];
