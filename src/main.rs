@@ -252,6 +252,7 @@ fn main() {
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 let amount = u64::from_be_bytes(buf);
 
+                let max_bars = 20;
                 let frames = [ "-", "\\", "|", "/" ];
                 let mut frame = 0;
                 let mut limiter = amount;
@@ -265,7 +266,6 @@ fn main() {
                     file.write(&buf).unwrap();
 
                     let fraction = (amount - limiter) as f64 / amount as f64;
-                    let max_bars = 20;
                     let filled_bars = (max_bars as f64 * fraction) as u64;
 
                     let mut bar = String::from("[");
@@ -280,11 +280,20 @@ fn main() {
                     print!("\r|  {}  |  {}  |  {:.2}% / 100.00%  |  {} / {}  |  {}s elapsed  |  {}s remaining  |", frames[frame], bar, fraction*100.0, amount-limiter, amount, elapsed, remaining);
                 }
 
+                // FIXME: This code repetition is absolutely foul holy fuck
+
                 let mut buf = vec![0; limiter as usize];
                 stream.as_ref().unwrap().read_exact(&mut buf).unwrap();
                 file.write(&buf).unwrap();
 
-                print!("\r[{}]", "█".repeat(20));
+                let mut bar = String::from("[");
+                bar += &"█".repeat(max_bars as usize);
+                bar += "]";
+
+                let elapsed = Instant::now()-start;
+                let elapsed = elapsed.as_secs();
+                let remaining = (((elapsed as f64) - elapsed as f64) as u64).to_string();
+                print!("\r|  {}  |  {}  |  {:.2}% / 100.00%  |  {} / {}  |  {}s elapsed  |  {}s remaining  |", frames[frame], bar, 1, amount-limiter, amount, elapsed, remaining);
 
                 println!("\nFile downloaded!");
             }
