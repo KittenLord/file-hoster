@@ -7,7 +7,7 @@ use std::fs::{File, OpenOptions};
 use std::net::{Shutdown, TcpListener, TcpStream};
 
 const VERSION_HEADER: &str = "v0.0.0";
-const BATCH_SIZE: u64 = 1000000;
+const BATCH_SIZE: u64 = 50000;
 
 fn get_config_path() -> Option<PathBuf> {
     let os = std::env::consts::OS;
