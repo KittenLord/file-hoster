@@ -293,7 +293,7 @@ fn main() {
                 let elapsed = Instant::now()-start;
                 let elapsed = elapsed.as_secs();
                 let remaining = (((elapsed as f64) - elapsed as f64) as u64).to_string();
-                print!("\r|  {}  |  {}  |  {:.2}% / 100.00%  |  {} / {}  |  {}s elapsed  |  {}s remaining  |", frames[frame], bar, 1, amount-limiter, amount, elapsed, remaining);
+                print!("\r|  {}  |  {}  |  {:.2}% / 100.00%  |  {} / {}  |  {}s elapsed  |  {}s remaining  |", frames[frame], bar, 100, amount-limiter, amount, elapsed, remaining);
 
                 println!("\nFile downloaded!");
             }
